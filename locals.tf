@@ -159,7 +159,7 @@ locals {
 
       password_authentication_disabled = coalesce(
         try(node.os.password_authentication_disabled, null),
-        local.os_matrix[lower(node.os.type)].os_type == "Windows" ? false : true
+        local.os_matrix[lower(node.os.type)].os_type == "Windows" ? true : false
       )
 
       network_interfaces = {
@@ -181,12 +181,11 @@ locals {
       data_disk_managed_disks = {
         for disk_key, disk in coalesce(try(node.data_disks, {}), {}) :
         disk_key => {
-          normalized_type      = lower(coalesce(disk.disk_type, "standard"))
           name                 = "${local.base_resource_names[node_name]}-${disk_key}-disk"
-          storage_account_type = local.disk_type_defaults[normalized_type].storage_account_type
+          storage_account_type = local.disk_type_defaults[lower(coalesce(disk.disk_type, "standard"))].storage_account_type
           disk_size_gb = coalesce(
             try(disk.disk_size_gb, null),
-            local.disk_type_defaults[normalized_type].default_size_gb
+            local.disk_type_defaults[lower(coalesce(disk.disk_type, "standard"))].default_size_gb
           )
           lun = coalesce(
             try(disk.lun, null),
