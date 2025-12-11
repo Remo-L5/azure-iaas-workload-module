@@ -67,32 +67,73 @@ locals {
       - python3
       - python3-pip
       - git
+
+    write_files:
+      - path: /usr/local/bin/start-jupyter.sh
+        permissions: '0755'
+        content: |
+          #!/bin/bash
+          exec /opt/venvs/jupyter/bin/jupyter lab \
+            --ip=0.0.0.0 \
+            --port=8888 \
+            --NotebookApp.token='' \
+            --NotebookApp.password='' \
+            --no-browser \
+            --notebook-dir=/var/lib/jupyter
+
+      - path: /etc/systemd/system/jupyterlab.service
+        permissions: '0644'
+        content: |
+          [Unit]
+          Description=Jupyter Lab (venv)
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          User=jupyter
+          Group=jupyter
+          Environment=HOME=/home/jupyter
+          Environment=PATH=/opt/venvs/jupyter/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+          Environment=JUPYTER_RUNTIME_DIR=/var/lib/jupyter/runtime
+          WorkingDirectory=/var/lib/jupyter
+          ExecStart=/usr/local/bin/start-jupyter.sh
+          Restart=on-failure
+          RestartSec=3
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=full
+          ProtectHome=true
+
+          [Install]
+          WantedBy=multi-user.target
+
     runcmd:
-      - pip3 install --upgrade pip
-      - pip3 install jupyterlab notebook
-      - cat <<'EOF' >/usr/local/bin/start-jupyter.sh
-    #!/bin/bash
-    exec /usr/local/bin/jupyter lab --ip=0.0.0.0 --port=8888 --NotebookApp.token='' --NotebookApp.password='' --no-browser --notebook-dir=/var/lib/jupyter
-    EOF
+      # Create jupyter user and home
+      - useradd --system --create-home --shell /sbin/nologin jupyter || true
+      - mkdir -p /home/jupyter
+      - chown -R jupyter:jupyter /home/jupyter
+      - chmod 0750 /home/jupyter
+
+      # Create venv and install Jupyter
+      - python3 -m venv /opt/venvs/jupyter
+      - /opt/venvs/jupyter/bin/pip install --upgrade pip setuptools wheel
+      - /opt/venvs/jupyter/bin/pip install jupyterlab notebook
+
+      # Prepare notebook and runtime dirs
+      - mkdir -p /var/lib/jupyter/runtime
+      - chown -R jupyter:jupyter /var/lib/jupyter
+
+      # Ensure start script is executable
       - chmod +x /usr/local/bin/start-jupyter.sh
-      - mkdir -p /var/lib/jupyter
-      - cat <<'EOF' >/etc/systemd/system/jupyterlab.service
-    [Unit]
-    Description=Jupyter Lab
-    After=network-online.target
 
-    [Service]
-    Type=simple
-    User=root
-    Environment=HOME=/root
-    ExecStart=/usr/local/bin/start-jupyter.sh
-    Restart=on-failure
-
-    [Install]
-    WantedBy=multi-user.target
-    EOF
+      # Reload systemd and start service
       - systemctl daemon-reload
       - systemctl enable --now jupyterlab.service
+
+      # (Optional) open firewall for remote access
+      - firewall-cmd --add-port=8888/tcp --permanent || true
+      - firewall-cmd --reload || true
+
   EOT
 
   os_matrix = {
